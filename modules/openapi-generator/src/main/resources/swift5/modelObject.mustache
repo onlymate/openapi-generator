@@ -1,12 +1,30 @@
-{{^objcCompatible}}{{#nonPublicApi}}internal{{/nonPublicApi}}{{^nonPublicApi}}public{{/nonPublicApi}} struct {{classname}}: Codable { {{/objcCompatible}}
+{{#discriminator}}
+public enum {{classname}}Family: String, ClassFamily {
+  static var discriminator: Discriminator = .type
+  {{#mappedModels}}
+  case {{#lambda.camelcase}}{{{mappingName}}}{{/lambda.camelcase}} = "{{{modelName}}}"
+  {{/mappedModels}}
+
+  func getType() -> Any.Type {
+      switch self {
+      {{#mappedModels}}
+      case .{{#lambda.camelcase}}{{{mappingName}}}{{/lambda.camelcase}}:
+          return {{{modelName}}}.self
+      {{/mappedModels}}
+      }
+  }
+}
+{{/discriminator}}
+
+{{^objcCompatible}}{{#nonPublicApi}}internal{{/nonPublicApi}}{{^nonPublicApi}}public{{/nonPublicApi}} class {{classname}}: {{#parent}}{{{parent}}}{{/parent}}{{^parent}}{{classPrefix}}Codable, Hashable{{/parent}} { {{/objcCompatible}}
 {{#objcCompatible}}@objc {{#nonPublicApi}}internal{{/nonPublicApi}}{{^nonPublicApi}}public{{/nonPublicApi}} class {{classname}}: NSObject, Codable { {{/objcCompatible}}
 
-{{#allVars}}
+{{#vars}}
 {{#isEnum}}
 {{> modelInlineEnumDeclaration}}
 {{/isEnum}}
-{{/allVars}}
-{{#allVars}}
+{{/vars}}
+{{#vars}}
 {{#isEnum}}
     {{#description}}/** {{description}} */
     {{/description}}{{#deprecated}}
@@ -28,62 +46,64 @@
     {{/vendorExtensions.x-swift-optional-scalar}}
     {{/objcCompatible}}
 {{/isEnum}}
-{{/allVars}}
+{{/vars}}
+
+{{#discriminator}}
+    public enum Discriminator: CodingKey {
+      case {{{discriminatorName}}}
+    }
+{{/discriminator}}
 
 {{#hasVars}}
-    {{#nonPublicApi}}internal{{/nonPublicApi}}{{^nonPublicApi}}public{{/nonPublicApi}} init({{#allVars}}{{name}}: {{{datatypeWithEnum}}}{{#required}}{{#isNullable}}?{{/isNullable}}{{/required}}{{^required}}? = nil{{/required}}{{#hasMore}}, {{/hasMore}}{{/allVars}}) {
-        {{#allVars}}
-        self.{{name}} = {{name}}
-        {{/allVars}}
-    }
-{{/hasVars}}
-{{#additionalPropertiesType}}
-    {{#nonPublicApi}}internal{{/nonPublicApi}}{{^nonPublicApi}}public{{/nonPublicApi}} {{#readonlyProperties}}private(set) {{/readonlyProperties}}var additionalProperties: [String:{{{additionalPropertiesType}}}] = [:]
-
-    {{#nonPublicApi}}internal{{/nonPublicApi}}{{^nonPublicApi}}public{{/nonPublicApi}} subscript(key: String) -> {{{additionalPropertiesType}}}? {
-        get {
-            if let value = additionalProperties[key] {
-                return value
-            }
-            return nil
-        }
-
-        set {
-            additionalProperties[key] = newValue
-        }
-    }
-
-    // Encodable protocol methods
-
-    {{#nonPublicApi}}internal{{/nonPublicApi}}{{^nonPublicApi}}public{{/nonPublicApi}} func encode(to encoder: Encoder) throws {
-
-        var container = encoder.container(keyedBy: String.self)
-
-        {{#allVars}}
-        try container.encode{{#required}}{{#isNullable}}IfPresent{{/isNullable}}{{/required}}{{^required}}IfPresent{{/required}}({{{name}}}, forKey: "{{{baseName}}}")
-        {{/allVars}}
-        try container.encodeMap(additionalProperties)
-    }
-
-    // Decodable protocol methods
-
-    {{#nonPublicApi}}internal{{/nonPublicApi}}{{^nonPublicApi}}public{{/nonPublicApi}}{{#objcCompatible}} required{{/objcCompatible}} init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: String.self)
-
-        {{#allVars}}
-        {{name}} = try container.decode{{#required}}{{#isNullable}}IfPresent{{/isNullable}}{{/required}}{{^required}}IfPresent{{/required}}({{{datatypeWithEnum}}}.self, forKey: "{{{baseName}}}")
-        {{/allVars}}
-        var nonAdditionalPropertyKeys = Set<String>()
-        {{#allVars}}
-        nonAdditionalPropertyKeys.insert("{{{baseName}}}")
-        {{/allVars}}
-        additionalProperties = try container.decodeMap({{{additionalPropertiesType}}}.self, excludedKeys: nonAdditionalPropertyKeys)
-    }
-
-{{/additionalPropertiesType}}
-{{^additionalPropertiesType}}{{#vendorExtensions.x-codegen-has-escaped-property-names}}
     {{#nonPublicApi}}internal{{/nonPublicApi}}{{^nonPublicApi}}public{{/nonPublicApi}} enum CodingKeys: String, CodingKey, CaseIterable { {{#allVars}}
         case {{name}}{{#vendorExtensions.x-codegen-escaped-property-name}} = "{{{baseName}}}"{{/vendorExtensions.x-codegen-escaped-property-name}}{{/allVars}}
     }
-{{/vendorExtensions.x-codegen-has-escaped-property-names}}{{/additionalPropertiesType}}
+
+    required public init(from decoder: Decoder) throws {
+      let container = try decoder.container(keyedBy: CodingKeys.self)
+      {{#vars}}
+      {{#isEnum}}
+      self.{{name}} = try{{#required}}{{#isNullable}}?{{/isNullable}}{{/required}}{{^required}}?{{/required}} container.decode({{{enumName}}}.self, forKey: .{{name}})
+      {{/isEnum}}
+      {{^isEnum}}
+      {{#isContainer}}
+      {{#isListContainer}}
+      {{#vendorExtensions.x-codegen-parent-model}}
+      self.{{name}} = try{{#required}}{{#isNullable}}?{{/isNullable}}{{/required}}{{^required}}?{{/required}} container.decode(family: {{mostInnerItems.dataType}}Family.self, forKey: .{{name}})
+      {{/vendorExtensions.x-codegen-parent-model}}
+      {{^vendorExtensions.x-codegen-parent-model}}
+      self.{{name}} = try{{#required}}{{#isNullable}}?{{/isNullable}}{{/required}}{{^required}}?{{/required}} container.decode({{{datatype}}}.self, forKey: .{{name}})
+      {{/vendorExtensions.x-codegen-parent-model}}
+      {{/isListContainer}}
+      {{#isMapContainer}}
+      self.{{name}} = try{{#required}}{{#isNullable}}?{{/isNullable}}{{/required}}{{^required}}?{{/required}} container.decode({{{datatype}}}.self, forKey: .{{name}})
+      {{/isMapContainer}}
+      {{/isContainer}}
+      {{^isContainer}}
+      self.{{name}} = try{{#required}}{{#isNullable}}?{{/isNullable}}{{/required}}{{^required}}?{{/required}} container.decode({{{datatype}}}.self, forKey: .{{name}})
+      {{/isContainer}}
+      {{/isEnum}}
+      {{/vars}}
+      {{#parent}}
+      try super.init(from: decoder)
+      {{/parent}}
+    }
+
+    {{#nonPublicApi}}internal{{/nonPublicApi}}{{^nonPublicApi}}public{{/nonPublicApi}} init({{#allVars}}{{name}}: {{{datatypeWithEnum}}}{{#required}}{{#isNullable}}?{{/isNullable}}{{/required}}{{^required}}? = nil{{/required}}{{#hasMore}}, {{/hasMore}}{{/allVars}}) {
+        {{#vars}}
+        self.{{name}} = {{name}}
+        {{/vars}}
+        {{#parent}}
+        super.init({{#parentVars}}{{{name}}}:{{{name}}}{{#hasMore}},{{/hasMore}}{{/parentVars}})
+        {{/parent}}
+    }
+
+    public static func ==(lhs: {{classname}}, rhs: {{classname}}) -> Bool {
+      return ObjectIdentifier(lhs) == ObjectIdentifier(rhs)
+    }
+
+    {{^parent}}
+    public func hash(into hasher: inout Hasher) { return hasher.combine(ObjectIdentifier(self)) }
+    {{/parent}}
+{{/hasVars}}
 }
