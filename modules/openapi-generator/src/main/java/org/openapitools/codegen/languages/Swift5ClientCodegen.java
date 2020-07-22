@@ -34,6 +34,8 @@ import java.io.File;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.Map;
+import java.util.Map.Entry;
 
 import static org.openapitools.codegen.utils.StringUtils.camelize;
 
@@ -207,7 +209,7 @@ public class Swift5ClientCodegen extends DefaultCodegen implements CodegenConfig
         typeMapping.put("float", "Float");
         typeMapping.put("number", "Double");
         typeMapping.put("double", "Double");
-        typeMapping.put("object", "Any");
+        typeMapping.put("object", "JSONValue");
         typeMapping.put("file", "URL");
         typeMapping.put("binary", "URL");
         typeMapping.put("ByteArray", "Data");
@@ -455,6 +457,12 @@ public class Swift5ClientCodegen extends DefaultCodegen implements CodegenConfig
         supportingFiles.add(new SupportingFile("JSONEncodingHelper.mustache",
                 sourceFolder,
                 "JSONEncodingHelper.swift"));
+        supportingFiles.add(new SupportingFile("JSONValue.mustache",
+                 sourceFolder,
+                 "JSONValue.swift"));
+         supportingFiles.add(new SupportingFile("ClassFamily.mustache",
+                  sourceFolder,
+                  "ClassFamily.swift"));
         supportingFiles.add(new SupportingFile("git_push.sh.mustache",
                 "",
                 "git_push.sh"));
@@ -892,6 +900,28 @@ public class Swift5ClientCodegen extends DefaultCodegen implements CodegenConfig
     }
 
     @Override
+    public Map<String, Object> postProcessAllModels(Map<String, Object> objs){
+        Map<String, Object> models = super.postProcessAllModels(objs);
+        
+        // To make discriminator inheritance working we need to iterate through
+        // each model property to check if this property is another model which
+        // has child classes
+        // We are setting the setting the flag "x-codegen-parent-model" = true
+        for (final Entry<String, Object> model : models.entrySet()) {
+            CodegenModel mo = ModelUtils.getModelByName(model.getKey(), models);
+            if (mo != null) {
+            	for (CodegenProperty prop : mo.vars) {
+            		CodegenModel propModel = ModelUtils.getModelByName(prop.complexType, models);
+            		if (propModel != null && propModel.hasChildren) {
+            			prop.vendorExtensions.put("x-codegen-parent-model", true);  
+            		}
+            	}
+            }
+        }
+        return models;
+    }
+
+    @Override
     public Map<String, Object> postProcessModels(Map<String, Object> objs) {
         Map<String, Object> postProcessedModelsEnum = postProcessModelsEnum(objs);
 
@@ -930,7 +960,7 @@ public class Swift5ClientCodegen extends DefaultCodegen implements CodegenConfig
     @Override
     public void postProcessModelProperty(CodegenModel model, CodegenProperty property) {
         super.postProcessModelProperty(model, property);
-
+        Map<String, Schema> allDefinitions = ModelUtils.getSchemas(this.openAPI);
         boolean isSwiftScalarType = property.isInteger || property.isLong || property.isFloat
                 || property.isDouble || property.isBoolean;
         if ((!property.required || property.isNullable) && isSwiftScalarType) {
